@@ -1,121 +1,563 @@
-import http from 'http';
-
-import { IntegrationProviderAuthenticationError } from '@jupiterone/integration-sdk-core';
-
+import fetch, { Response } from 'node-fetch';
+import { retry } from '@lifeomic/attempt';
+import {
+  IntegrationProviderAPIError,
+  IntegrationProviderAuthenticationError,
+} from '@jupiterone/integration-sdk-core';
 import { IntegrationConfig } from './config';
-import { AcmeUser, AcmeGroup } from './types';
+import {
+  LaceworkToken,
+  LaceworkPostRequestBody,
+  LaceworkTeamMember,
+  LaceworkTeamMembers,
+  LaceworkCloudAccount,
+  LaceworkCloudEntity,
+  LaceworkMachine,
+  LaceworkContainer,
+  LaceworkApplication,
+  LaceworkHostVulnerability,
+  CloudProvider,
+  LaceworkAssessmentsResponse,
+  LaceworkPackage,
+  LaceworkEvent,
+  LaceworkEvaluationConfig,
+} from './types';
 
 export type ResourceIteratee<T> = (each: T) => Promise<void> | void;
 
-/**
- * An APIClient maintains authentication state and provides an interface to
- * third party data APIs.
- *
- * It is recommended that integrations wrap provider data APIs to provide a
- * place to handle error responses and implement common patterns for iterating
- * resources.
- */
 export class APIClient {
-  constructor(readonly config: IntegrationConfig) {}
+  constructor(readonly config: IntegrationConfig) {
+    this.tokenRequest = {
+      keyId: config.accessKeyId,
+      expiryTime: 86400,
+    };
+  }
 
-  public async verifyAuthentication(): Promise<void> {
-    // TODO make the most light-weight request possible to validate
-    // authentication works with the provided credentials, throw an err if
-    // authentication fails
-    const request = new Promise<void>((resolve, reject) => {
-      http.get(
-        {
-          hostname: 'localhost',
-          port: 443,
-          path: '/api/v1/some/endpoint?limit=1',
-          agent: false,
-          timeout: 10,
+  private baseUri = `https://${this.config.organizationUrl}`;
+  private withBaseUri = (path: string) => `${this.baseUri}${path}`;
+  private tokenRequest: {
+    keyId: string;
+    expiryTime: number;
+  };
+  private token: LaceworkToken;
+
+  private isTokenValid() {
+    if (!this.token?.expiresAt || !this.token?.token) {
+      return false;
+    }
+    return true;
+  }
+
+  private checkStatus = (response: Response) => {
+    if (response.ok) {
+      return response;
+    } else {
+      throw new IntegrationProviderAPIError(response);
+    }
+  };
+
+  public async authenticate(): Promise<any> {
+    try {
+      // Handle rate-limiting
+      const response = await retry(
+        async () => {
+          const res: Response = await fetch(
+            this.withBaseUri('/api/v2/access/tokens'),
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-LW-UAKS': this.config.secretKey,
+              },
+              body: JSON.stringify(this.tokenRequest),
+            },
+          );
+          return this.checkStatus(res);
         },
-        (res) => {
-          if (res.statusCode !== 200) {
-            reject(new Error('Provider authentication failed'));
-          } else {
-            resolve();
-          }
+        {
+          delay: 5000,
+          maxAttempts: 10,
+          handleError: (err, context) => {
+            if (
+              err.statusCode !== 429 ||
+              ([500, 502, 503].includes(err.statusCode) &&
+                context.attemptNum > 1)
+            )
+              context.abort();
+          },
         },
       );
-    });
-
-    try {
-      await request;
+      return response.json();
     } catch (err) {
-      throw new IntegrationProviderAuthenticationError({
-        cause: err,
-        endpoint: 'https://localhost/api/v1/some/endpoint?limit=1',
+      throw new IntegrationProviderAPIError({
+        endpoint: this.withBaseUri('/api/v2/access/tokens'),
         status: err.status,
         statusText: err.statusText,
       });
     }
   }
 
+  private async request(
+    uri: string,
+    method: 'GET' | 'HEAD' = 'GET',
+  ): Promise<any> {
+    try {
+      // Handle rate-limiting
+      const response = await retry(
+        async () => {
+          if (!this.isTokenValid()) {
+            this.token = await this.authenticate();
+          }
+          const res: Response = await fetch(uri, {
+            method,
+            headers: {
+              Authorization: this.token.token,
+            },
+          });
+          return this.checkStatus(res);
+        },
+        {
+          delay: 5000,
+          maxAttempts: 10,
+          handleError: (err, context) => {
+            if (
+              err.statusCode !== 429 ||
+              ([500, 502, 503].includes(err.statusCode) &&
+                context.attemptNum > 1)
+            ) {
+              context.abort();
+            }
+          },
+        },
+      );
+      return response.json();
+    } catch (err) {
+      throw new IntegrationProviderAPIError({
+        endpoint: uri,
+        status: err.status,
+        statusText: err.statusText,
+      });
+    }
+  }
+
+  private async postRequest(
+    uri: string,
+    method: string,
+    body: LaceworkPostRequestBody,
+  ): Promise<any> {
+    try {
+      // Handle rate-limiting
+      //get time now
+      const response = await retry(
+        async () => {
+          if (!this.isTokenValid()) {
+            this.token = await this.authenticate();
+          }
+
+          const res: Response = await fetch(uri, {
+            method: method,
+            headers: {
+              Authorization: this.token.token,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+          return this.checkStatus(res);
+        },
+        {
+          delay: 5000,
+          maxAttempts: 10,
+          handleError: (err, context) => {
+            if (
+              err.statusCode !== 429 ||
+              ([500, 502, 503].includes(err.statusCode) &&
+                context.attemptNum > 1)
+            )
+              context.abort();
+          },
+        },
+      );
+      return response.json();
+    } catch (err) {
+      throw new IntegrationProviderAPIError({
+        endpoint: uri,
+        status: err.status,
+        statusText: err.statusText,
+      });
+    }
+  }
+
+  private async paginatedRequest<T>(
+    uri: string,
+    method: 'GET' | 'HEAD' = 'GET',
+    iteratee: ResourceIteratee<T>,
+    iterateeKey: string,
+  ): Promise<void> {
+    try {
+      let nextUri = null;
+      do {
+        const response = await this.request(nextUri || uri, method);
+        nextUri = response.paging?.urls?.nextPage
+          ? response.paging?.urls?.nextPage
+          : null;
+        for (const item of response) {
+          await iteratee(item);
+        }
+      } while (nextUri);
+    } catch (err) {
+      throw new IntegrationProviderAPIError({
+        cause: new Error(err.message),
+        endpoint: uri,
+        status: err.statusCode,
+        statusText: err.message,
+      });
+    }
+  }
+
+  //refactor this to use generic paginated request with additional params
+  private async paginatedCloudAccountRequest<T>(
+    uri: string,
+    method: 'GET' | 'HEAD' = 'GET',
+    iteratee: ResourceIteratee<T>,
+    iterateeKey: string,
+  ): Promise<void> {
+    try {
+      let nextUri = null;
+      do {
+        const response = await this.request(nextUri || uri, method);
+        nextUri = response.paging?.urls?.nextPage
+          ? response.paging?.urls?.nextPage
+          : null;
+        for (const item of response.data) {
+          await iteratee(item);
+        }
+      } while (nextUri);
+    } catch (err) {
+      throw new IntegrationProviderAPIError({
+        cause: new Error(err.message),
+        endpoint: uri,
+        status: err.statusCode,
+        statusText: err.message,
+      });
+    }
+  }
+
+  private async paginatedAssessmentRequest<T>(
+    uri: string,
+    method: 'GET' | 'HEAD' = 'GET',
+    iteratee: ResourceIteratee<T>,
+  ): Promise<void> {
+    try {
+      let nextUri = null;
+      do {
+        const response = await this.request(nextUri || uri, method);
+        nextUri =
+          response && response.paging?.urls?.nextPage
+            ? response.paging?.urls?.nextPage
+            : null;
+        await iteratee(response);
+      } while (nextUri);
+    } catch (err) {
+      throw new IntegrationProviderAPIError({
+        cause: new Error(err.message),
+        endpoint: uri,
+        status: err.statusCode,
+        statusText: err.message,
+      });
+    }
+  }
+
+  private async paginatedEntityRequest<T>(
+    uri: string,
+    iteratee: ResourceIteratee<T>,
+    body: LaceworkPostRequestBody,
+  ): Promise<void> {
+    try {
+      let nextUri = null;
+      let method = 'POST';
+      do {
+        let response;
+        if (method == 'POST') {
+          response = await this.postRequest(uri, method, body);
+          method = 'GET';
+        } else {
+          response = await this.request(nextUri || uri, 'GET');
+        }
+        nextUri = response.paging?.urls?.nextPage
+          ? response.paging?.urls?.nextPage
+          : null;
+        for (const item of response.data) {
+          await iteratee(item);
+        }
+      } while (nextUri);
+    } catch (err) {
+      throw new IntegrationProviderAPIError({
+        cause: new Error(err.message),
+        endpoint: uri,
+        status: err.statusCode,
+        statusText: err.message,
+      });
+    }
+  }
+
+  public async verifyAuthentication(): Promise<void> {
+    const uri = this.withBaseUri('/api/v2/CloudAccounts');
+    try {
+      await this.request(uri);
+    } catch (err) {
+      throw new IntegrationProviderAuthenticationError({
+        cause: err,
+        endpoint: uri,
+        status: err.status,
+        statusText: err.statusText,
+      });
+    }
+  }
+
+  public async iterateCloudInventory(
+    cloudProvider: CloudProvider,
+    iteratee: ResourceIteratee<any>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const body = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
+      },
+      filters: [],
+      csp: cloudProvider,
+    };
+
+    await this.paginatedEntityRequest<LaceworkCloudEntity>(
+      this.withBaseUri(`/api/v2/Inventory/search`),
+      iteratee,
+      body,
+    );
+  }
+
   /**
-   * Iterates each user resource in the provider.
+   * Iterates each team member resource in the provider.
    *
    * @param iteratee receives each resource to produce entities/relationships
    */
-  public async iterateUsers(
-    iteratee: ResourceIteratee<AcmeUser>,
+  public async iterateTeamMembers(
+    iteratee: ResourceIteratee<LaceworkTeamMember>,
   ): Promise<void> {
-    // TODO paginate an endpoint, invoke the iteratee with each record in the
-    // page
-    //
-    // The provider API will hopefully support pagination. Functions like this
-    // should maintain pagination state, and for each page, for each record in
-    // the page, invoke the `ResourceIteratee`. This will encourage a pattern
-    // where each resource is processed and dropped from memory.
-
-    const users: AcmeUser[] = [
-      {
-        id: 'acme-user-1',
-        name: 'User One',
-      },
-      {
-        id: 'acme-user-2',
-        name: 'User Two',
-      },
-    ];
-
-    for (const user of users) {
-      await iteratee(user);
+    const teamMembers: LaceworkTeamMembers = await this.request(
+      this.withBaseUri(`/api/v2/TeamMembers`),
+      'GET',
+    );
+    for (const teamMember of teamMembers.data) {
+      await iteratee(teamMember);
     }
   }
 
   /**
-   * Iterates each group resource in the provider.
+   * Iterates each database resource in the provider.
    *
    * @param iteratee receives each resource to produce entities/relationships
    */
-  public async iterateGroups(
-    iteratee: ResourceIteratee<AcmeGroup>,
+  public async iterateDatabases(
+    iteratee: ResourceIteratee<LaceworkTeamMember>,
   ): Promise<void> {
-    // TODO paginate an endpoint, invoke the iteratee with each record in the
-    // page
-    //
-    // The provider API will hopefully support pagination. Functions like this
-    // should maintain pagination state, and for each page, for each record in
-    // the page, invoke the `ResourceIteratee`. This will encourage a pattern
-    // where each resource is processed and dropped from memory.
+    await this.paginatedRequest<LaceworkTeamMember>(
+      this.withBaseUri(`/v2/databases`),
+      'GET',
+      iteratee,
+      'id',
+    );
+  }
 
-    const groups: AcmeGroup[] = [
-      {
-        id: 'acme-group-1',
-        name: 'Group One',
-        users: [
-          {
-            id: 'acme-user-1',
-          },
-        ],
+  public async getAWSAssessment(
+    iteratee: ResourceIteratee<LaceworkAssessmentsResponse>,
+    assessmentType: string,
+    primaryQueryId: string | undefined,
+  ): Promise<void> {
+    await this.paginatedAssessmentRequest<LaceworkAssessmentsResponse>(
+      this.withBaseUri(
+        `/api/v2/Reports?primaryQueryId=${primaryQueryId}&format=json&reportType=${assessmentType}`,
+      ),
+      'GET',
+      iteratee,
+    );
+  }
+
+  public async getAzureAssessment(
+    iteratee: ResourceIteratee<LaceworkAssessmentsResponse>,
+    assessmentType: string,
+    primaryQueryId: string | undefined,
+    secondaryQueryId: string | undefined,
+  ): Promise<void> {
+    await this.paginatedAssessmentRequest<LaceworkAssessmentsResponse>(
+      this.withBaseUri(
+        `/api/v2/Reports?primaryQueryId=${primaryQueryId}&secondaryQueryId=${secondaryQueryId}&format=json&reportType=${assessmentType}`,
+      ),
+      'GET',
+      iteratee,
+    );
+  }
+
+  public async getAzureGCPAssessment(
+    iteratee: ResourceIteratee<LaceworkAssessmentsResponse>,
+    assessmentType: string,
+    primaryQueryId: string | undefined,
+    secondaryQueryId: string | undefined,
+  ): Promise<void> {
+    await this.paginatedAssessmentRequest<LaceworkAssessmentsResponse>(
+      this.withBaseUri(
+        `/api/v2/Reports?primaryQueryId=${primaryQueryId}&secondaryQueryId=${secondaryQueryId}&format=json&reportType=${assessmentType}`,
+      ),
+      'GET',
+      iteratee,
+    );
+  }
+
+  public async getGCPProjectList(
+    iteratee: ResourceIteratee<LaceworkEvaluationConfig>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const body: LaceworkPostRequestBody = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
       },
-    ];
+      filters: [],
+      dataset: 'GcpCompliance',
+    };
 
-    for (const group of groups) {
-      await iteratee(group);
-    }
+    await this.paginatedEntityRequest<LaceworkEvaluationConfig>(
+      this.withBaseUri(`/api/v2/Configs/ComplianceEvaluations/search`),
+      iteratee,
+      body,
+    );
+  }
+
+  public async iterateCloudAccounts(
+    iteratee: ResourceIteratee<LaceworkCloudAccount>,
+  ): Promise<void> {
+    await this.paginatedCloudAccountRequest<LaceworkCloudAccount>(
+      this.withBaseUri(`/api/v2/CloudAccounts`),
+      'GET',
+      iteratee,
+      'id',
+    );
+  }
+
+  public async iterateMachines(
+    iteratee: ResourceIteratee<LaceworkMachine>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const body: LaceworkPostRequestBody = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
+      },
+      filters: [],
+    };
+    await this.paginatedEntityRequest<LaceworkMachine>(
+      this.withBaseUri(`/api/v2/Entities/Machines/search`),
+      iteratee,
+      body,
+    );
+  }
+
+  public async iterateContainers(
+    iteratee: ResourceIteratee<LaceworkContainer>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const body: LaceworkPostRequestBody = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
+      },
+      filters: [],
+    };
+    await this.paginatedEntityRequest<LaceworkContainer>(
+      this.withBaseUri(`/api/v2/Entities/Containers/search`),
+      iteratee,
+      body,
+    );
+  }
+
+  public async iterateApplications(
+    iteratee: ResourceIteratee<LaceworkApplication>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const body: LaceworkPostRequestBody = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
+      },
+      filters: [],
+    };
+    await this.paginatedEntityRequest<LaceworkApplication>(
+      this.withBaseUri(`/api/v2/Entities/Applications/search`),
+      iteratee,
+      body,
+    );
+  }
+
+  public async iteratePackages(
+    iteratee: ResourceIteratee<LaceworkPackage>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const body: LaceworkPostRequestBody = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
+      },
+      filters: [],
+    };
+    await this.paginatedEntityRequest<LaceworkPackage>(
+      this.withBaseUri(`/api/v2/Entities/Packages/search`),
+      iteratee,
+      body,
+    );
+  }
+
+  public async iterateEvents(
+    iteratee: ResourceIteratee<LaceworkEvent>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const body: LaceworkPostRequestBody = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
+      },
+      filters: [],
+    };
+    await this.paginatedEntityRequest<LaceworkEvent>(
+      this.withBaseUri(`/api/v2/Events/search`),
+      iteratee,
+      body,
+    );
+  }
+
+  public async iterateHostVulnerabilities(
+    iteratee: ResourceIteratee<LaceworkHostVulnerability>,
+  ): Promise<void> {
+    const now = new Date();
+    const start: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const body: LaceworkPostRequestBody = {
+      timeFilter: {
+        startTime: start.toISOString(),
+        endTime: now.toISOString(),
+      },
+      filters: [],
+    };
+    await this.paginatedEntityRequest<LaceworkHostVulnerability>(
+      this.withBaseUri(`/api/v2/Vulnerabilities/Hosts/search`),
+      iteratee,
+      body,
+    );
   }
 }
 
