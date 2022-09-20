@@ -12,7 +12,7 @@ export function setupProjectRecording(
 ): Recording {
   return setupRecording({
     ...input,
-    redactedRequestHeaders: ['Authorization','X-LW-UAKS'],
+    redactedRequestHeaders: ['Authorization', 'X-LW-UAKS'],
     redactedResponseHeaders: ['set-cookie'],
     mutateEntry: (entry) => {
       redact(entry);

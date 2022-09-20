@@ -67,8 +67,7 @@ export async function fetchAssessments({
           }),
         );
       } else if (AzureCloudAccountTypes.includes(cloudAccount.type)) {
-
-      /* Case when account type is related to Azure */
+        /* Case when account type is related to Azure */
         assessmentTypes = AzureAssesmentTypes;
         primaryQueryId = cloudAccount.data.tenantId;
 
@@ -97,8 +96,7 @@ export async function fetchAssessments({
           }),
         );
       } else if (GCPCloudAccountTypes.includes(cloudAccount.type)) {
-
-      /* Case when account type is related to GCP */
+        /* Case when account type is related to GCP */
         return;
         assessmentTypes = GCPAssesmentTypes;
       }
