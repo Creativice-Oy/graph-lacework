@@ -3,7 +3,6 @@ import { IntegrationSpecConfig } from '@jupiterone/integration-sdk-core';
 import { IntegrationConfig } from '../../../src/config';
 import { organizationSpec } from './organization';
 import { teamMemberSpec } from './team-member';
-import { containerSpec } from './container';
 import { assessmentSpec } from './assessment';
 import { findingSpec } from './finding';
 import { hostVulnerabilitySpec } from './hostVulnerability';
