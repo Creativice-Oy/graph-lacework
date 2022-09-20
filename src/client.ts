@@ -38,8 +38,6 @@ export class APIClient {
   private isTokenValid() {
     if (!this.token?.expiresAt || !this.token?.token) {
       return false;
-    } else if (Date.now() >= parseTimePropertyValue(this.token.expiresAt)) {
-      return false;
     }
     return true;
   }
@@ -300,7 +298,7 @@ export class APIClient {
   }
 
   public async verifyAuthentication(): Promise<void> {
-    const uri = this.withBaseUri('/api/v2/TeamMembers');
+    const uri = this.withBaseUri('/api/v2/CloudAccounts');
     try {
       await this.request(uri);
     } catch (err) {
