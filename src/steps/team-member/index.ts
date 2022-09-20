@@ -1,6 +1,5 @@
 import {
   Entity,
-  getRawData,
   IntegrationStep,
   IntegrationStepExecutionContext,
 } from '@jupiterone/integration-sdk-core';
@@ -43,9 +42,7 @@ export const accessListSteps: IntegrationStep<IntegrationConfig>[] = [
     id: Steps.TEAM_MEMBERS,
     name: 'Fetch Team Members',
     entities: [Entities.TEAM_MEMBER],
-    relationships: [
-      Relationships.ORGANIZATION_HAS_TEAM_MEMBER,
-    ],
+    relationships: [Relationships.ORGANIZATION_HAS_TEAM_MEMBER],
     dependsOn: [Steps.ORGANIZATION],
     executionHandler: fetchTeamMembers,
   },

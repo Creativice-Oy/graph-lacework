@@ -13,7 +13,7 @@ if (process.env.LOAD_ENV) {
 
 const DEFAULT_ACCESS_KEY_ID = 'dummy-access-key-id';
 const DEFAULT_SECRET_KEY = 'dummy-secret-key';
-const DEFAULT_ORG_URL = 'dummy.org.url';
+const DEFAULT_ORG_URL = 'lwintjupiterone.lacework.net';
 
 export const integrationConfig: IntegrationConfig = {
   accessKeyId: process.env.ACCESS_KEY_ID || DEFAULT_ACCESS_KEY_ID,

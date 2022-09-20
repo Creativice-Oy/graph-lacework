@@ -2,7 +2,6 @@ import {
   createDirectRelationship,
   createIntegrationEntity,
   Entity,
-  parseTimePropertyValue,
   Relationship,
   RelationshipClass,
 } from '@jupiterone/integration-sdk-core';
@@ -29,19 +28,14 @@ export function createTeamMemberEntity(teamMember: LaceworkTeamMember): Entity {
       assign: {
         _type: Entities.TEAM_MEMBER._type,
         _class: Entities.TEAM_MEMBER._class,
-        _key: getTeamMemberKey(
-          teamMember.userGuid,
-        ),
+        _key: getTeamMemberKey(teamMember.userGuid),
         id: teamMember.userGuid,
         name: `${teamMember.props.firstName} ${teamMember.props.lastName}`,
         username: teamMember.userName,
         email: teamMember.userName,
         emailDomain: [getEmailDomail(teamMember.userName)],
         shortLoginId: getShortLoginId(teamMember.userName),
-        active:
-          teamMember.userEnabled == 1
-          ? true
-          : false,
+        active: teamMember.userEnabled == 1 ? true : false,
         'props.company': teamMember.props.company,
         'props.jitCreated': teamMember.props.jitCreated,
         'props.accountAdmin': teamMember.props.accountAdmin,
