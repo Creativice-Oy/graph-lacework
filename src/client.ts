@@ -3,7 +3,6 @@ import { retry } from '@lifeomic/attempt';
 import {
   IntegrationProviderAPIError,
   IntegrationProviderAuthenticationError,
-  parseTimePropertyValue,
 } from '@jupiterone/integration-sdk-core';
 import { IntegrationConfig } from './config';
 import {
