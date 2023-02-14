@@ -17,7 +17,6 @@ import {
   LaceworkApplication,
   LaceworkHostVulnerability,
   CloudProvider,
-  LaceworkAssessmentsResponse,
   LaceworkPackage,
   LaceworkEvent,
   LaceworkEvaluationConfig,
