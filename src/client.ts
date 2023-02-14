@@ -21,6 +21,7 @@ import {
   LaceworkPackage,
   LaceworkEvent,
   LaceworkEvaluationConfig,
+  LaceworkAssessment,
 } from './types';
 
 export type ResourceIteratee<T> = (each: T) => Promise<void> | void;
@@ -130,7 +131,10 @@ export class APIClient {
           },
         },
       );
-      return response.json();
+
+      if (response.status !== 204) {
+        return response.json();
+      }
     } catch (err) {
       throw new IntegrationProviderAPIError({
         endpoint: uri,
@@ -147,7 +151,6 @@ export class APIClient {
   ): Promise<any> {
     try {
       // Handle rate-limiting
-      //get time now
       const response = await retry(
         async () => {
           if (!this.isTokenValid()) {
@@ -191,71 +194,25 @@ export class APIClient {
     uri: string,
     method: 'GET' | 'HEAD' = 'GET',
     iteratee: ResourceIteratee<T>,
-    iterateeKey: string,
+    iterateeKey?: string,
   ): Promise<void> {
     try {
       let nextUri = null;
       do {
         const response = await this.request(nextUri || uri, method);
-        nextUri = response.paging?.urls?.nextPage
-          ? response.paging?.urls?.nextPage
-          : null;
-        for (const item of response) {
-          await iteratee(item);
-        }
-      } while (nextUri);
-    } catch (err) {
-      throw new IntegrationProviderAPIError({
-        cause: new Error(err.message),
-        endpoint: uri,
-        status: err.statusCode,
-        statusText: err.message,
-      });
-    }
-  }
 
-  //refactor this to use generic paginated request with additional params
-  private async paginatedCloudAccountRequest<T>(
-    uri: string,
-    method: 'GET' | 'HEAD' = 'GET',
-    iteratee: ResourceIteratee<T>,
-    iterateeKey: string,
-  ): Promise<void> {
-    try {
-      let nextUri = null;
-      do {
-        const response = await this.request(nextUri || uri, method);
-        nextUri = response.paging?.urls?.nextPage
-          ? response.paging?.urls?.nextPage
-          : null;
-        for (const item of response.data) {
-          await iteratee(item);
-        }
-      } while (nextUri);
-    } catch (err) {
-      throw new IntegrationProviderAPIError({
-        cause: new Error(err.message),
-        endpoint: uri,
-        status: err.statusCode,
-        statusText: err.message,
-      });
-    }
-  }
-
-  private async paginatedAssessmentRequest<T>(
-    uri: string,
-    method: 'GET' | 'HEAD' = 'GET',
-    iteratee: ResourceIteratee<T>,
-  ): Promise<void> {
-    try {
-      let nextUri = null;
-      do {
-        const response = await this.request(nextUri || uri, method);
         nextUri =
           response && response.paging?.urls?.nextPage
             ? response.paging?.urls?.nextPage
             : null;
-        await iteratee(response);
+
+        if (response) {
+          const data = iterateeKey ? response[iterateeKey] : response;
+
+          for (const item of data) {
+            await iteratee(item);
+          }
+        }
       } while (nextUri);
     } catch (err) {
       throw new IntegrationProviderAPIError({
@@ -371,46 +328,49 @@ export class APIClient {
   }
 
   public async getAWSAssessment(
-    iteratee: ResourceIteratee<LaceworkAssessmentsResponse>,
+    iteratee: ResourceIteratee<LaceworkAssessment>,
     assessmentType: string,
     primaryQueryId: string | undefined,
   ): Promise<void> {
-    await this.paginatedAssessmentRequest<LaceworkAssessmentsResponse>(
+    await this.paginatedRequest<LaceworkAssessment>(
       this.withBaseUri(
         `/api/v2/Reports?primaryQueryId=${primaryQueryId}&format=json&reportType=${assessmentType}`,
       ),
       'GET',
       iteratee,
+      'data',
     );
   }
 
   public async getAzureAssessment(
-    iteratee: ResourceIteratee<LaceworkAssessmentsResponse>,
+    iteratee: ResourceIteratee<LaceworkAssessment>,
     assessmentType: string,
     primaryQueryId: string | undefined,
     secondaryQueryId: string | undefined,
   ): Promise<void> {
-    await this.paginatedAssessmentRequest<LaceworkAssessmentsResponse>(
+    await this.paginatedRequest<LaceworkAssessment>(
       this.withBaseUri(
         `/api/v2/Reports?primaryQueryId=${primaryQueryId}&secondaryQueryId=${secondaryQueryId}&format=json&reportType=${assessmentType}`,
       ),
       'GET',
       iteratee,
+      'data',
     );
   }
 
   public async getAzureGCPAssessment(
-    iteratee: ResourceIteratee<LaceworkAssessmentsResponse>,
+    iteratee: ResourceIteratee<LaceworkAssessment>,
     assessmentType: string,
     primaryQueryId: string | undefined,
     secondaryQueryId: string | undefined,
   ): Promise<void> {
-    await this.paginatedAssessmentRequest<LaceworkAssessmentsResponse>(
+    await this.paginatedRequest<LaceworkAssessment>(
       this.withBaseUri(
         `/api/v2/Reports?primaryQueryId=${primaryQueryId}&secondaryQueryId=${secondaryQueryId}&format=json&reportType=${assessmentType}`,
       ),
       'GET',
       iteratee,
+      'data',
     );
   }
 
@@ -438,11 +398,11 @@ export class APIClient {
   public async iterateCloudAccounts(
     iteratee: ResourceIteratee<LaceworkCloudAccount>,
   ): Promise<void> {
-    await this.paginatedCloudAccountRequest<LaceworkCloudAccount>(
+    await this.paginatedRequest<LaceworkCloudAccount>(
       this.withBaseUri(`/api/v2/CloudAccounts`),
       'GET',
       iteratee,
-      'id',
+      'data',
     );
   }
 

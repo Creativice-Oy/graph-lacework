@@ -6,8 +6,7 @@ import {
 import { Entities } from '../constants';
 
 export function getOrganizationKey(name: string): string {
-  const formattedName = name.replace(' ', '_');
-  return `datastax_organization:${formattedName}`;
+  return `lacework_organization:${name}`;
 }
 
 export function createOrganizationEntity(organization: {

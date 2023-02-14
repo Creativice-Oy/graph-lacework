@@ -107,7 +107,7 @@ export const Entities: Record<
   | 'PACKAGE'
   | 'APPLICATION'
   | 'ALERT_FINDING'
-  | 'VULNERABILITY',
+  | 'FINDING',
   StepEntityMetadata
 > = {
   ORGANIZATION: {
@@ -155,7 +155,7 @@ export const Entities: Record<
     _type: 'lacework_alert_finding',
     _class: ['Alert'],
   },
-  VULNERABILITY: {
+  FINDING: {
     resourceName: 'Vulnerability',
     _type: 'lacework_finding',
     _class: ['Finding'],
@@ -256,19 +256,19 @@ export const Relationships: Record<
     _type: 'lacework_assessment_identified_finding',
     sourceType: Entities.ASSESSMENT._type,
     _class: RelationshipClass.IDENTIFIED,
-    targetType: Entities.VULNERABILITY._type,
+    targetType: Entities.FINDING._type,
   },
   MACHINE_HAS_VULNERABILITY: {
     _type: 'lacework_machine_has_finding',
     sourceType: Entities.MACHINE._type,
     _class: RelationshipClass.HAS,
-    targetType: Entities.VULNERABILITY._type,
+    targetType: Entities.FINDING._type,
   },
   PACKAGE_HAS_VULNERABILITY: {
     _type: 'lacework_package_has_finding',
     sourceType: Entities.PACKAGE._type,
     _class: RelationshipClass.HAS,
-    targetType: Entities.VULNERABILITY._type,
+    targetType: Entities.FINDING._type,
   },
 };
 
@@ -278,7 +278,7 @@ export const MappedRelationships: Record<
 > = {
   VULNERABILITY_IS_CVE: {
     _type: 'lacework_finding_is_cve',
-    sourceType: Entities.VULNERABILITY._type,
+    sourceType: Entities.FINDING._type,
     _class: RelationshipClass.IS,
     targetType: 'cve',
     direction: RelationshipDirection.FORWARD,

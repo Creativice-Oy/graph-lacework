@@ -22,9 +22,8 @@ export function setupProjectRecording(
 
 function getRedactedOAuthResponse() {
   return {
-    access_token: '[REDACTED]',
-    expires_in: 9999,
-    token_type: 'Bearer',
+    token: '[REDACTED]',
+    expiresAt: 9999,
   };
 }
 
@@ -42,7 +41,7 @@ function redact(entry): void {
 
   //we can just get rid of all response content if this was the token call
   const requestUrl = entry.request.url;
-  if (requestUrl.match(/oauth\/token/)) {
+  if (requestUrl.includes('/access/tokens')) {
     entry.response.content.text = JSON.stringify(getRedactedOAuthResponse());
     return;
   }

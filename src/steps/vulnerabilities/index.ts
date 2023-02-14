@@ -4,7 +4,9 @@ import {
   createDirectRelationship,
   RelationshipClass,
   getRawData,
+  IntegrationMissingKeyError,
 } from '@jupiterone/integration-sdk-core';
+
 import { IntegrationConfig } from '../../config';
 import {
   Steps,
@@ -12,7 +14,6 @@ import {
   Relationships,
   MappedRelationships,
 } from '../constants';
-
 import {
   createCloudVulnerabilityEntity,
   createHostVulnerabilityEntity,
@@ -20,7 +21,6 @@ import {
   getHostVulnerabilityKey,
   createFindingCveRelationship,
 } from './converter';
-
 import { getMachineKey } from '../machine/converter';
 import {
   LaceworkAssessment,
@@ -96,7 +96,7 @@ export async function fetchHostVulnerabilities({
     }
 
     if (
-      await jobState.findEntity(
+      await jobState.hasKey(
         getHostVulnerabilityKey(
           hostVulnerability.machineTags.Hostname,
           hostVulnerability.vulnId,
@@ -127,31 +127,38 @@ export async function fetchHostVulnerabilities({
   });
 }
 
+export function tryParseCveId(title: string): string | undefined {
+  if (!title.toLowerCase().includes('cve')) {
+    return undefined;
+  }
+
+  const titleComponents = title.trim().split('(');
+
+  let cveId;
+  if (titleComponents.length > 0) {
+    cveId = titleComponents[titleComponents.length - 1].slice(0, -1);
+  }
+
+  return cveId;
+}
+
 export async function buildVulnerabilityCveRelationships({
   jobState,
-  logger,
 }: IntegrationStepExecutionContext<IntegrationConfig>) {
   await jobState.iterateEntities(
-    { _type: Entities.VULNERABILITY._type },
+    { _type: Entities.FINDING._type },
     async (vulnerabilityEntity) => {
       const vulnerability = getRawData<
         LaceworkRecommendation | LaceworkHostVulnerability
       >(vulnerabilityEntity);
       if (!vulnerability) {
-        logger.warn(
-          { _key: vulnerabilityEntity._key },
+        throw new IntegrationMissingKeyError(
           'Could not get raw data for vulnerability entity',
         );
-        return;
       }
 
       if (isAssessmentVulnerability(vulnerability)) {
-        const titleComponents = vulnerability.TITLE.split('(');
-        let cveId;
-        if (titleComponents.length > 0) {
-          cveId = titleComponents[titleComponents.length - 1].slice(0, -1);
-        }
-
+        const cveId = tryParseCveId(vulnerability.TITLE);
         if (cveId) {
           await jobState.addRelationship(
             createFindingCveRelationship(vulnerabilityEntity, cveId),
@@ -175,7 +182,7 @@ export const vulnerabilitySteps: IntegrationStep<IntegrationConfig>[] = [
   {
     id: Steps.CLOUD_VULNERABILITIES.id,
     name: Steps.CLOUD_VULNERABILITIES.name,
-    entities: [Entities.VULNERABILITY],
+    entities: [Entities.FINDING],
     relationships: [Relationships.ASSESSMENT_IDENTIFIED_VULNERABILITY],
     dependsOn: [Steps.ASSESSMENTS.id],
     executionHandler: fetchCloudVulnerabilities,
@@ -183,7 +190,7 @@ export const vulnerabilitySteps: IntegrationStep<IntegrationConfig>[] = [
   {
     id: Steps.HOST_VULNERABILITIES.id,
     name: Steps.HOST_VULNERABILITIES.name,
-    entities: [Entities.VULNERABILITY],
+    entities: [Entities.FINDING],
     relationships: [Relationships.MACHINE_HAS_VULNERABILITY],
     dependsOn: [Steps.MACHINES.id],
     executionHandler: fetchHostVulnerabilities,

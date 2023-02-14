@@ -21,7 +21,7 @@ describe('#validateInvocation', () => {
     });
 
     await expect(validateInvocation(executionContext)).rejects.toThrow(
-      'Config requires all of {accessKeyId, secretKey, organizationName}',
+      'Config requires accessKey, secretKey, organizationUrl',
     );
   });
 

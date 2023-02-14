@@ -21,20 +21,17 @@ export function createMachineEntity(machine: LaceworkMachine): Entity {
         _class: Entities.MACHINE._class,
         name: machine.hostname || 'default',
         hostname: machine.hostname,
-        'machineTags.externalIp': machine.machineTags?.ExternalIp,
-        'machineTags.hostname': machine.machineTags?.Hostname,
-        'machineTags.instanceId': machine.machineTags?.InstanceId,
-        'machineTags.instanceName': machine.machineTags?.InstanceName,
-        'machineTags.internalIp': machine.machineTags?.InternalIp,
-        'machineTags.numericProjectId': machine.machineTags?.NumericProjectId,
-        'machineTags.ProjectId': machine.machineTags?.ProjectId,
-        'machineTags.VmInstanceType': machine.machineTags?.VmInstanceType,
-        'machineTags.VmProvider': machine.machineTags?.VmProvider,
-        'machineTags.Zone': machine.machineTags?.Zone,
-        'machineTags.arch': machine.machineTags?.arch,
-        'machineTags.os': machine.machineTags?.os,
+        ipAddress: machine.primaryIpAddr,
+        osName: machine.hostname,
+        publicIpAddress:
+          machine.machineTags?.ExternalIp !== 'NOT_AVAILABLE'
+            ? machine.machineTags?.ExternalIp
+            : undefined,
+        privateIpAddress:
+          machine.machineTags?.InternalIp !== 'NOT_AVAILABLE'
+            ? machine.machineTags?.InternalIp
+            : undefined,
         mid: machine.mid,
-        primaryIpAddress: machine.primaryIpAddr,
         startedOn: parseTimePropertyValue(machine.startTime),
       },
     },

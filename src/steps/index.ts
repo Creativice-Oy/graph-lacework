@@ -11,13 +11,13 @@ import { vulnerabilitySteps } from './vulnerabilities';
 
 const integrationSteps = [
   ...organizationSteps,
-  ...teamMemberSteps,
-  ...serviceSteps,
   ...cloudAccountSteps,
+  ...serviceSteps,
+  ...assessmentSteps,
+  ...teamMemberSteps,
   ...machineSteps,
   ...eventsSteps,
   ...applicationSteps,
-  ...assessmentSteps,
   ...packageSteps,
   ...vulnerabilitySteps,
 ];

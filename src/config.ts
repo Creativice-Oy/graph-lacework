@@ -32,11 +32,16 @@ export async function validateInvocation(
   const { config } = context.instance;
 
   if (!config.accessKeyId || !config.secretKey || !config.organizationUrl) {
+    const missingFields: string[] = [];
+    if (!config.accessKey) missingFields.push('accessKey');
+    if (!config.secretKey) missingFields.push('secretKey');
+    if (!config.organizationUrl) missingFields.push('organizationUrl');
     throw new IntegrationValidationError(
-      'Config requires all of {accessKeyId, secretKey, organizationName}',
+      `Config requires ${missingFields.join(', ')}`,
     );
   }
 
   const apiClient = createAPIClient(config);
-  await apiClient.authenticate().then(() => apiClient.verifyAuthentication());
+  await apiClient.authenticate();
+  await apiClient.verifyAuthentication();
 }

@@ -6,6 +6,7 @@ import {
   RelationshipClass,
   Entity,
 } from '@jupiterone/integration-sdk-core';
+
 import { IntegrationConfig } from '../../config';
 import {
   Steps,
@@ -16,7 +17,7 @@ import {
   Relationships,
   SERVICE_ENTITY_DATA_KEY,
 } from '../constants';
-import { createAssessmentEntity } from './converter';
+import { createAssessmentEntity, getAssessmentKey } from './converter';
 import { LaceworkCloudAccount } from '../../types';
 import { createAPIClient } from '../../client';
 
@@ -30,8 +31,6 @@ export async function fetchAssessments({
   const serviceEntity = (await jobState.getData(
     SERVICE_ENTITY_DATA_KEY,
   )) as Entity;
-
-  const allAssessments: any[] = [];
 
   await jobState.iterateEntities(
     { _type: Entities.CLOUD_ACCOUNT._type },
@@ -55,9 +54,16 @@ export async function fetchAssessments({
 
         for (const assessmentType of AWSAssesmentTypes) {
           await apiClient.getAWSAssessment(
-            async (assessments) => {
-              for (const assessment of assessments.data) {
-                allAssessments.push(assessment);
+            async (assessment) => {
+              if (
+                !jobState.hasKey(
+                  getAssessmentKey(
+                    assessment.reportType,
+                    cloudAccount.intgGuid,
+                    assessment.reportTime,
+                  ),
+                )
+              ) {
                 const assessmentEntity = await jobState.addEntity(
                   createAssessmentEntity(assessment, cloudAccount.intgGuid),
                 );
@@ -86,37 +92,37 @@ export async function fetchAssessments({
           );
         }
 
-        await Promise.all(
-          secondaryQueryIdList.map(async (secondaryQueryId) => {
-            await Promise.all(
-              assessmentTypes.map(async (type) => {
-                await apiClient.getAzureGCPAssessment(
-                  async (assessments) => {
-                    for (const assessment of assessments.data) {
-                      allAssessments.push(assessment);
-                      const assessmentEntity = await jobState.addEntity(
-                        createAssessmentEntity(
-                          assessment,
-                          cloudAccount.intgGuid,
-                        ),
-                      );
-                      await jobState.addRelationship(
-                        createDirectRelationship({
-                          _class: RelationshipClass.PERFORMED,
-                          from: serviceEntity,
-                          to: assessmentEntity,
-                        }),
-                      );
-                    }
-                  },
-                  type,
-                  primaryQueryId,
-                  secondaryQueryId.toUpperCase(),
-                );
-              }),
+        for (const secondaryQueryId of secondaryQueryIdList) {
+          for (const assessmentType of assessmentTypes) {
+            await apiClient.getAzureAssessment(
+              async (assessment) => {
+                if (
+                  !jobState.hasKey(
+                    getAssessmentKey(
+                      assessment.reportType,
+                      cloudAccount.intgGuid,
+                      assessment.reportTime,
+                    ),
+                  )
+                ) {
+                  const assessmentEntity = await jobState.addEntity(
+                    createAssessmentEntity(assessment, cloudAccount.intgGuid),
+                  );
+                  await jobState.addRelationship(
+                    createDirectRelationship({
+                      _class: RelationshipClass.PERFORMED,
+                      from: serviceEntity,
+                      to: assessmentEntity,
+                    }),
+                  );
+                }
+              },
+              assessmentType,
+              primaryQueryId,
+              secondaryQueryId.toUpperCase(),
             );
-          }),
-        );
+          }
+        }
       } else if (cloudAccount.type.toLocaleLowerCase().startsWith('gcp')) {
         /* List GCP projects through compliance evaluation endpoint */
         assessmentTypes = GCPAssesmentTypes;
@@ -134,9 +140,16 @@ export async function fetchAssessments({
           gcpProjectList.map(async (secondaryQueryId) => {
             for (const type of assessmentTypes) {
               await apiClient.getAzureGCPAssessment(
-                async (assessments) => {
-                  for (const assessment of assessments.data) {
-                    allAssessments.push(assessment);
+                async (assessment) => {
+                  if (
+                    !jobState.hasKey(
+                      getAssessmentKey(
+                        assessment.reportType,
+                        cloudAccount.intgGuid,
+                        assessment.reportTime,
+                      ),
+                    )
+                  ) {
                     const assessmentEntity = await jobState.addEntity(
                       createAssessmentEntity(assessment, cloudAccount.intgGuid),
                     );
@@ -156,7 +169,6 @@ export async function fetchAssessments({
             }
           }),
         );
-        return;
       }
     },
   );

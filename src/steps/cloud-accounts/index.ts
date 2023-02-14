@@ -5,6 +5,7 @@ import {
   IntegrationStepExecutionContext,
   RelationshipClass,
 } from '@jupiterone/integration-sdk-core';
+
 import { createAPIClient } from '../../client';
 import { IntegrationConfig } from '../../config';
 import {
@@ -28,18 +29,16 @@ export async function fetchCloudAccounts({
   )) as Entity;
 
   await apiClient.iterateCloudAccounts(async (cloudAccount) => {
-    if (cloudAccount.name === 'Test') {
-      const cloudAccountEntity = await jobState.addEntity(
-        createCloudAccountEntity(cloudAccount),
-      );
-      await jobState.addRelationship(
-        createDirectRelationship({
-          _class: RelationshipClass.HAS,
-          from: organizationEntity,
-          to: cloudAccountEntity,
-        }),
-      );
-    }
+    const cloudAccountEntity = await jobState.addEntity(
+      createCloudAccountEntity(cloudAccount),
+    );
+    await jobState.addRelationship(
+      createDirectRelationship({
+        _class: RelationshipClass.HAS,
+        from: organizationEntity,
+        to: cloudAccountEntity,
+      }),
+    );
   });
 }
 

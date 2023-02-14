@@ -2,6 +2,7 @@ import {
   IntegrationStep,
   IntegrationStepExecutionContext,
 } from '@jupiterone/integration-sdk-core';
+
 import { IntegrationConfig } from '../../config';
 import { Steps, Entities, ORGANIZATION_ENTITY_DATA_KEY } from '../constants';
 import { createOrganizationEntity } from './converter';
