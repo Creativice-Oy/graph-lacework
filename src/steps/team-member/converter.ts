@@ -18,7 +18,7 @@ function getShortLoginId(email: string) {
   return email.split('@')[0];
 }
 
-function getEmailDomail(email: string) {
+function getEmailDomain(email: string) {
   return email.split('@')[1];
 }
 
@@ -34,7 +34,7 @@ export function createTeamMemberEntity(teamMember: LaceworkTeamMember): Entity {
         name: `${teamMember.props.firstName} ${teamMember.props.lastName}`,
         username: teamMember.userName,
         email: teamMember.userName,
-        emailDomain: [getEmailDomail(teamMember.userName)],
+        emailDomain: [getEmailDomain(teamMember.userName)],
         shortLoginId: getShortLoginId(teamMember.userName),
         active: teamMember.userEnabled == 1 ? true : false,
         company: teamMember.props.company,
