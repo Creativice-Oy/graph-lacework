@@ -5,6 +5,7 @@ import {
   createDirectRelationship,
   RelationshipClass,
   Entity,
+  JobState,
 } from '@jupiterone/integration-sdk-core';
 
 import { IntegrationConfig } from '../../config';
@@ -19,7 +20,164 @@ import {
 } from '../constants';
 import { createAssessmentEntity, getAssessmentKey } from './converter';
 import { LaceworkCloudAccount } from '../../types';
-import { createAPIClient } from '../../client';
+import { APIClient, createAPIClient } from '../../client';
+
+async function ingestAwsAssessments({
+  account,
+  serviceEntity,
+  apiClient,
+  jobState,
+}: {
+  account: LaceworkCloudAccount;
+  serviceEntity: Entity;
+  apiClient: APIClient;
+  jobState: JobState;
+}) {
+  const primaryQueryId =
+    account.data.crossAccountCredentials?.roleArn.substring(13, 25);
+
+  for (const assessmentType of AWSAssesmentTypes) {
+    await apiClient.getAWSAssessment(
+      async (assessment) => {
+        if (
+          !jobState.hasKey(
+            getAssessmentKey(
+              assessment.reportType,
+              account.intgGuid,
+              assessment.reportTime,
+            ),
+          )
+        ) {
+          const assessmentEntity = await jobState.addEntity(
+            createAssessmentEntity(assessment, account.intgGuid),
+          );
+
+          await jobState.addRelationship(
+            createDirectRelationship({
+              _class: RelationshipClass.PERFORMED,
+              from: serviceEntity,
+              to: assessmentEntity,
+            }),
+          );
+        }
+      },
+      assessmentType,
+      primaryQueryId,
+    );
+  }
+}
+
+async function ingestAzureAssessments({
+  account,
+  serviceEntity,
+  apiClient,
+  jobState,
+}: {
+  account: LaceworkCloudAccount;
+  serviceEntity: Entity;
+  apiClient: APIClient;
+  jobState: JobState;
+}) {
+  const assessmentTypes = AzureAssesmentTypes;
+  const primaryQueryId = account.data.tenantId;
+  let secondaryQueryIdList;
+
+  if (account.state.details.subscriptionErrors) {
+    secondaryQueryIdList = Object.keys(
+      account.state.details.subscriptionErrors,
+    );
+  }
+
+  for (const secondaryQueryId of secondaryQueryIdList) {
+    for (const assessmentType of assessmentTypes) {
+      await apiClient.getAzureAssessment(
+        async (assessment) => {
+          if (
+            !jobState.hasKey(
+              getAssessmentKey(
+                assessment.reportType,
+                account.intgGuid,
+                assessment.reportTime,
+              ),
+            )
+          ) {
+            const assessmentEntity = await jobState.addEntity(
+              createAssessmentEntity(assessment, account.intgGuid),
+            );
+            await jobState.addRelationship(
+              createDirectRelationship({
+                _class: RelationshipClass.PERFORMED,
+                from: serviceEntity,
+                to: assessmentEntity,
+              }),
+            );
+          }
+        },
+        assessmentType,
+        primaryQueryId,
+        secondaryQueryId.toUpperCase(),
+      );
+    }
+  }
+}
+
+async function ingestGcpAssessments({
+  account,
+  serviceEntity,
+  apiClient,
+  jobState,
+}: {
+  account: LaceworkCloudAccount;
+  serviceEntity: Entity;
+  apiClient: APIClient;
+  jobState: JobState;
+}) {
+  /* List GCP projects through compliance evaluation endpoint */
+  const assessmentTypes = GCPAssesmentTypes;
+  const primaryQueryId = account.data.id;
+
+  const gcpProjectListRaw: string[] = [];
+  await apiClient.getGCPProjectList((project) => {
+    if (project.account.projectId != undefined) {
+      gcpProjectListRaw.push(project.account.projectId);
+    }
+  });
+  const gcpProjectList = [...new Set(gcpProjectListRaw)];
+
+  await Promise.all(
+    gcpProjectList.map(async (secondaryQueryId) => {
+      for (const type of assessmentTypes) {
+        await apiClient.getAzureGCPAssessment(
+          async (assessment) => {
+            if (
+              !jobState.hasKey(
+                getAssessmentKey(
+                  assessment.reportType,
+                  account.intgGuid,
+                  assessment.reportTime,
+                ),
+              )
+            ) {
+              const assessmentEntity = await jobState.addEntity(
+                createAssessmentEntity(assessment, account.intgGuid),
+              );
+              await jobState.addRelationship(
+                createDirectRelationship({
+                  _class: RelationshipClass.PERFORMED,
+                  from: serviceEntity,
+                  to: assessmentEntity,
+                }),
+              );
+            }
+          },
+          type,
+          primaryQueryId,
+          secondaryQueryId,
+        );
+      }
+    }),
+  );
+}
 
 export async function fetchAssessments({
   instance,
@@ -35,8 +193,8 @@ export async function fetchAssessments({
   await jobState.iterateEntities(
     { _type: Entities.CLOUD_ACCOUNT._type },
     async (cloudAccountEntity) => {
-      const cloudAccount = getRawData<LaceworkCloudAccount>(cloudAccountEntity);
-      if (!cloudAccount) {
+      const account = getRawData<LaceworkCloudAccount>(cloudAccountEntity);
+      if (!account) {
         logger.warn(
           { _key: cloudAccountEntity._key },
           'Could not get raw data for cloud Account entity',
@@ -44,131 +202,27 @@ export async function fetchAssessments({
         return;
       }
 
-      let assessmentTypes: string[] = [];
-      let primaryQueryId: string | undefined;
-      let secondaryQueryIdList;
-
-      if (cloudAccount.type.toLocaleLowerCase().startsWith('aws')) {
-        const primaryQueryId =
-          cloudAccount.data.crossAccountCredentials?.roleArn.substring(13, 25);
-
-        for (const assessmentType of AWSAssesmentTypes) {
-          await apiClient.getAWSAssessment(
-            async (assessment) => {
-              if (
-                !jobState.hasKey(
-                  getAssessmentKey(
-                    assessment.reportType,
-                    cloudAccount.intgGuid,
-                    assessment.reportTime,
-                  ),
-                )
-              ) {
-                const assessmentEntity = await jobState.addEntity(
-                  createAssessmentEntity(assessment, cloudAccount.intgGuid),
-                );
-
-                await jobState.addRelationship(
-                  createDirectRelationship({
-                    _class: RelationshipClass.PERFORMED,
-                    from: serviceEntity,
-                    to: assessmentEntity,
-                  }),
-                );
-              }
-            },
-            assessmentType,
-            primaryQueryId,
-          );
-        }
-      } else if (cloudAccount.type.toLocaleLowerCase().startsWith('azure')) {
-        /* Case when account type is related to Azure */
-        assessmentTypes = AzureAssesmentTypes;
-        primaryQueryId = cloudAccount.data.tenantId;
-
-        if (cloudAccount.state.details.subscriptionErrors) {
-          secondaryQueryIdList = Object.keys(
-            cloudAccount.state.details.subscriptionErrors,
-          );
-        }
-
-        for (const secondaryQueryId of secondaryQueryIdList) {
-          for (const assessmentType of assessmentTypes) {
-            await apiClient.getAzureAssessment(
-              async (assessment) => {
-                if (
-                  !jobState.hasKey(
-                    getAssessmentKey(
-                      assessment.reportType,
-                      cloudAccount.intgGuid,
-                      assessment.reportTime,
-                    ),
-                  )
-                ) {
-                  const assessmentEntity = await jobState.addEntity(
-                    createAssessmentEntity(assessment, cloudAccount.intgGuid),
-                  );
-                  await jobState.addRelationship(
-                    createDirectRelationship({
-                      _class: RelationshipClass.PERFORMED,
-                      from: serviceEntity,
-                      to: assessmentEntity,
-                    }),
-                  );
-                }
-              },
-              assessmentType,
-              primaryQueryId,
-              secondaryQueryId.toUpperCase(),
-            );
-          }
-        }
-      } else if (cloudAccount.type.toLocaleLowerCase().startsWith('gcp')) {
-        /* List GCP projects through compliance evaluation endpoint */
-        assessmentTypes = GCPAssesmentTypes;
-        primaryQueryId = cloudAccount.data.id;
-
-        const gcpProjectListRaw: string[] = [];
-        await apiClient.getGCPProjectList((project) => {
-          if (project.account.projectId != undefined) {
-            gcpProjectListRaw.push(project.account.projectId);
-          }
+      if (account.type.toLocaleLowerCase().startsWith('aws')) {
+        await ingestAwsAssessments({
+          account,
+          serviceEntity,
+          apiClient,
+          jobState,
         });
-        const gcpProjectList = [...new Set(gcpProjectListRaw)];
-
-        await Promise.all(
-          gcpProjectList.map(async (secondaryQueryId) => {
-            for (const type of assessmentTypes) {
-              await apiClient.getAzureGCPAssessment(
-                async (assessment) => {
-                  if (
-                    !jobState.hasKey(
-                      getAssessmentKey(
-                        assessment.reportType,
-                        cloudAccount.intgGuid,
-                        assessment.reportTime,
-                      ),
-                    )
-                  ) {
-                    const assessmentEntity = await jobState.addEntity(
-                      createAssessmentEntity(assessment, cloudAccount.intgGuid),
-                    );
-                    await jobState.addRelationship(
-                      createDirectRelationship({
-                        _class: RelationshipClass.PERFORMED,
-                        from: serviceEntity,
-                        to: assessmentEntity,
-                      }),
-                    );
-                  }
-                },
-                type,
-                primaryQueryId,
-                secondaryQueryId,
-              );
-            }
-          }),
-        );
+      } else if (account.type.toLocaleLowerCase().startsWith('azure')) {
+        await ingestAzureAssessments({
+          account,
+          serviceEntity,
+          apiClient,
+          jobState,
+        });
+      } else if (account.type.toLocaleLowerCase().startsWith('gcp')) {
+        await ingestGcpAssessments({
+          account,
+          serviceEntity,
+          apiClient,
+          jobState,
+        });
       }
     },
   );
