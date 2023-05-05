@@ -1,19 +1,19 @@
 import { StepSpec } from '@jupiterone/integration-sdk-core';
 import { IntegrationConfig } from '../../../../src/config';
 
-export const accountSpec: StepSpec<IntegrationConfig>[] = [
+export const organizationSpec: StepSpec<IntegrationConfig>[] = [
   {
     /**
      * ENDPOINT: n/a
      * PATTERN: Singleton
      */
-    id: 'fetch-account',
-    name: 'Fetch Account Details',
+    id: 'fetch-organization',
+    name: 'Fetch Organization Details',
     entities: [
       {
-        resourceName: 'Account',
-        _type: 'acme_account',
-        _class: ['Account'],
+        resourceName: 'Organization',
+        _type: 'lacework_organization',
+        _class: ['Organization'],
       },
     ],
     relationships: [],

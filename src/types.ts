@@ -1,25 +1,63 @@
-// Providers often supply types with their API libraries.
-
-export interface AcmeUser {
-  id: string;
-  name: string;
+export interface LaceworToken {
+  expiresAt: string;
+  token: string;
 }
 
-export interface AcmeGroup {
-  id: string;
-  name: string;
-  users?: Pick<AcmeUser, 'id'>[];
+export interface LaceworPaginationResponse {
+  paging: {
+    rows: string;
+    totalRows: string;
+    urls: {
+      nextPage: string;
+    };
+  };
 }
 
-// Those can be useful to a degree, but often they're just full of optional
-// values. Understanding the response data may be more reliably accomplished by
-// reviewing the API response recordings produced by testing the wrapper client
-// (./client.ts). However, when there are no types provided, it is necessary to define
-// opaque types for each resource, to communicate the records that are expected
-// to come from an endpoint and are provided to iterating functions.
+export interface LaceworkTeamMembers {
+  data: LaceworkTeamMember[];
+}
 
-/*
-import { Opaque } from 'type-fest';
-export type AcmeUser = Opaque<any, 'AcmeUser'>;
-export type AcmeGroup = Opaque<any, 'AcmeGroup'>;
-*/
+export interface LaceworkTeamMember {
+  custGuid: string;
+  props: {
+    firstName: string;
+    lastName: string;
+    company: string;
+    jitCreated: boolean;
+    accountAdmin: boolean;
+    orgAdmin: boolean;
+    orgUser: boolean;
+    createdTime: string;
+  };
+  userEnabled: number;
+  userGuid: string;
+  userName: string;
+}
+
+export interface LaceworkContainer extends LaceworPaginationResponse {
+  data: {
+    startTime: string;
+    endTime: string;
+    mid: number;
+    containerName: string;
+    podName: string;
+    imageId: string;
+    props: {
+      IMAGE_CREATED_TIME: string;
+      IMAGE_ID: string;
+      IMAGE_SIZE: number;
+      IMAGE_TAG: string;
+      IMAGE_VERSION: string;
+      IMAGE_VIRTUAL_SIZE: number;
+      IPV4: string;
+      NAME: string;
+      PID_MODE: string;
+      POD_IP_ADDR: string;
+      POD_TYPE: string;
+      PRIVILEGED: number;
+      PROPS_LABEL: any;
+      VOLUME_MAP: any;
+    };
+    tags: any;
+  }[];
+}

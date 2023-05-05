@@ -12,18 +12,14 @@ export function setupProjectRecording(
 ): Recording {
   return setupRecording({
     ...input,
-    redactedRequestHeaders: ['Authorization'],
+    redactedRequestHeaders: ['Authorization','X-LW-UAKS'],
     redactedResponseHeaders: ['set-cookie'],
-    mutateEntry: mutations.unzipGzippedRecordingEntry,
-    /*mutateEntry: (entry) => {
+    mutateEntry: (entry) => {
       redact(entry);
-    },*/
+    },
   });
 }
 
-// a more sophisticated redaction example below:
-
-/*
 function getRedactedOAuthResponse() {
   return {
     access_token: '[REDACTED]',
@@ -56,19 +52,23 @@ function redact(entry): void {
   const parsedResponseText = JSON.parse(responseText.replace(/\r?\n|\r/g, ''));
 
   //now we can modify the returned object as desired
-  //in this example, if the return text is an array of objects that have the 'tenant' property...
-  if (parsedResponseText[0]?.tenant) {
-    for (let i = 0; i < parsedResponseText.length; i++) {
-      parsedResponseText[i].client_secret = '[REDACTED]';
-      parsedResponseText[i].jwt_configuration = '[REDACTED]';
-      parsedResponseText[i].signing_keys = '[REDACTED]';
-      parsedResponseText[i].encryption_key = '[REDACTED]';
-      parsedResponseText[i].addons = '[REDACTED]';
-      parsedResponseText[i].client_metadata = '[REDACTED]';
-      parsedResponseText[i].mobile = '[REDACTED]';
-      parsedResponseText[i].native_social_login = '[REDACTED]';
+  if (parsedResponseText) {
+    if (Array.isArray(parsedResponseText)) {
+      for (const element of parsedResponseText) {
+        if (element.info && element.info.datacenters) {
+          element.info.datacenters = element.info.datacenters.map(
+            (datacenter) => ({
+              ...datacenter,
+              secureBundleUrl: '[REDACTED]',
+              secureBundleInternalUrl: '[REDACTED]',
+              secureBundleMigrationProxyUrl: '[REDACTED]',
+              secureBundleMigrationProxyInternalUrl: '[REDACTED]',
+            }),
+          );
+        }
+      }
     }
   }
 
   entry.response.content.text = JSON.stringify(parsedResponseText);
-} */
+}
